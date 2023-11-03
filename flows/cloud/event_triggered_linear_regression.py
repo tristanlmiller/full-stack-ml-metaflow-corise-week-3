@@ -1,5 +1,6 @@
 from metaflow import FlowSpec, step, card, conda_base, current, Parameter, Flow, trigger
 from metaflow.cards import Markdown, Table, Image, Artifact
+from metaflow import retry, catch, timeout
 
 URL = "https://outerbounds-datasets.s3.us-west-2.amazonaws.com/taxi/latest.parquet"
 DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -10,7 +11,8 @@ DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
     libraries={
         "pandas": "1.4.2",
         "pyarrow": "11.0.0",
-        "numpy": "1.21.2",
+        #"numpy": "1.21.2",
+        "numpy": "1.22.0",
         "scikit-learn": "1.1.2",
     }
 )
@@ -18,13 +20,32 @@ class TaxiFarePrediction(FlowSpec):
     data_url = Parameter("data_url", default=URL)
 
     def transform_features(self, df):
-        # TODO:
+        import pandas as pd
+        # DONE:
         # Try to complete tasks 2 and 3 with this function doing nothing like it currently is.
         # Understand what is happening.
         # Revisit task 1 and think about what might go in this function.
 
+        #The reason the flow fails without this function is because logistic regression is not robust to null values
+        #The bad filters used earlier in task 1 should resolve this issue.
+        obviously_bad_data_filters = [
+            df.fare_amount > 0,  # fare_amount in US Dollars
+            df.trip_distance <= 100,  # trip_distance in miles
+            df.trip_distance > 0,
+            pd.notna(df.trip_distance),
+            df.passenger_count > 0,
+            pd.notna(df.passenger_count),
+            df.fare_amount > 0
+        ]
+
+        for f in obviously_bad_data_filters:
+            df = df[f]
+        df = df.reset_index(drop=True)
         return df
 
+    # @catch(var='start_error') #I'm not sure I want to use a catch here
+    @retry() #default arguments should suffice
+    @timeout(seconds=30) #took only 5 seconds in test, so plenty of leeway here
     @step
     def start(self):
         import pandas as pd
